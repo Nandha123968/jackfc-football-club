@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Jack Football Club",
+  "description": "Premium multi-sports facility booking, football turfs, temperature-controlled pool, badminton and elite court memberships at Jack Football Club (Jack FC) Arena.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

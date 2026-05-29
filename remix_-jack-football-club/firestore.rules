@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // catch-all default-deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Helpers
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+    
+    // Schema validation for Booking
+    function isValidBooking(data) {
+      return data.keys().hasAll(['bookingId', 'userName', 'userPhone', 'userEmail', 'sportName', 'sportId', 'slotId', 'date', 'dateString', 'time', 'total'])
+        && data.bookingId is string && data.bookingId.size() <= 128
+        && data.userName is string && data.userName.size() > 0 && data.userName.size() <= 100
+        && data.userPhone is string && data.userPhone.size() > 0 && data.userPhone.size() <= 30
+        && data.userEmail is string && data.userEmail.size() > 0 && data.userEmail.size() <= 100
+        && data.sportName is string && data.sportName.size() > 0 && data.sportName.size() <= 100
+        && data.sportId is string && data.sportId.size() > 0 && data.sportId.size() <= 100
+        && data.slotId is string && data.slotId.size() > 0 && data.slotId.size() <= 128
+        && data.date is string && data.date.size() > 0 && data.date.size() <= 100
+        && data.dateString is string && data.dateString.size() > 0 && data.dateString.size() <= 100
+        && data.time is string && data.time.size() > 0 && data.time.size() <= 100
+        && data.total is number;
+    }
+
+    // Schema validation for Match
+    function isValidMatch(data) {
+      return data.keys().hasAll(['id', 'sport', 'hostName', 'joinedCount', 'maxPlayers', 'date', 'time', 'skillLevel'])
+        && data.id is string && data.id.size() <= 128
+        && data.sport is string && data.sport.size() > 0 && data.sport.size() <= 100
+        && data.hostName is string && data.hostName.size() > 0 && data.hostName.size() <= 100
+        && data.joinedCount is number
+        && data.maxPlayers is number
+        && data.date is string && data.date.size() > 0 && data.date.size() <= 100
+        && data.time is string && data.time.size() > 0 && data.time.size() <= 100
+        && data.skillLevel is string && data.skillLevel.size() > 0 && data.skillLevel.size() <= 50;
+    }
+
+    // Rules for Bookings collection
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId);
+      allow list: if true; // Let clients query bookings for slot blocking
+      allow create: if isValidId(bookingId) && isValidBooking(incoming());
+      allow update, delete: if true; // Allowed for database testing cleanup and managing slots
+    }
+
+    // Rules for Matches collection
+    match /matches/{matchId} {
+      allow get: if isValidId(matchId);
+      allow list: if true; // Anyone can list matchmaking open lobbies
+      allow create: if isValidId(matchId) && isValidMatch(incoming());
+      allow update: if isValidId(matchId) && isValidMatch(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['joinedCount'])
+      );
+      allow delete: if false;
+    }
+  }
+}

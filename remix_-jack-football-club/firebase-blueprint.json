@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "booking": {
+      "title": "Booking",
+      "description": "Sport arena court reservation document",
+      "type": "object",
+      "properties": {
+        "bookingId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "teamName": { "type": "string" },
+        "sportName": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "addons": { "type": "array" },
+        "hourlyRate": { "type": "number" },
+        "addonsTotal": { "type": "number" },
+        "gst": { "type": "number" },
+        "total": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["bookingId", "userName", "userPhone", "userEmail", "sportName", "date", "time", "total"]
+    },
+    "match": {
+      "title": "Match",
+      "description": "Interactive matchmaking slot/lobby for open play",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sport": { "type": "string" },
+        "hostName": { "type": "string" },
+        "joinedCount": { "type": "number" },
+        "maxPlayers": { "type": "number" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "skillLevel": { "type": "string" },
+        "whatsappLink": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "sport", "hostName", "joinedCount", "maxPlayers", "date", "time", "skillLevel"]
+    }
+  },
+  "firestore": {
+    "/bookings/{bookingId}": {
+      "schema": "booking",
+      "description": "Collection of all court bookings made by customers."
+    },
+    "/matches/{matchId}": {
+      "schema": "match",
+      "description": "Lobbies hosted by competitive players to assemble teams."
+    }
+  }
+}
