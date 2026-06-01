@@ -194,16 +194,18 @@ export default function ContactMap() {
 
         </div>
 
-        {/* Dynamic Dark Grayscale Styled Map Box matching Horamavu exactly */}
+        {/* Dynamic Dark Grayscale Styled Map Box - Exact Jack FC Location */}
         <div className="mt-16 rounded-3xl overflow-hidden h-96 border border-zinc-850 shadow-2xl relative group">
           <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-all duration-300 z-10 pointer-events-none" />
           
+          {/* Using exact coordinates: 13.0221256, 77.6628092 from Google Maps */}
           <iframe
-            title="Jack Football Club Google Map Address"
+            title="Jack Football Club Google Map - Exact Location"
             className="w-full h-full border-none grayscale invert contrast-125 filter opacity-90"
-            src="https://maps.google.com/maps?q=97/3,%20Hoysala%20Nagar%2520Rd,%2520opp.%2520ANJENAYA%2520TEMPLE,%2520Vinayaka%2520Layout,%2520Horamavu,%2520Bengaluru,%2520Karnataka%2520560043&t=&z=14&ie=UTF8&iwloc=&output=embed"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3886.8897!2d77.6628092!3d13.0221256!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bae117aad6c9939%3A0xc785d6c34a76e9c5!2sJACK%20FOOTBALL%20TURF!5e0!3m2!1sen!2sin!4v1717200000000!5m2!1sen!2sin"
             allowFullScreen
             loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
           />
 
           {/* Embedded Floating White badge */}
