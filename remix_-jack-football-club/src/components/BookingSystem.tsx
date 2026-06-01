@@ -26,8 +26,11 @@ import {
   Unlock,
   Search,
   LogOut,
-  Key
+  Key,
+  Banknote,
+  Wallet
 } from 'lucide-react';
+import StripeCheckout from './StripeCheckout';
 
 interface BookingSystemProps {
   selectedFacilityId: string;
@@ -81,6 +84,11 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
   const [userPhone, setUserPhone] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [teamName, setTeamName] = useState('');
+
+  // Payment method state
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'venue'>('online');
+  const [showStripeCheckout, setShowStripeCheckout] = useState(false);
+  const [pendingBookingDetails, setPendingBookingDetails] = useState<any | null>(null);
 
   // Ticket Modal state
   const [showNotification, setShowNotification] = useState(false);
@@ -432,37 +440,17 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
   const cgstAndSgst = 0; // GST sports tax is removed per manager request
   const finalTotalAmount = subTotal;
 
-  // Form Booking Submission Action
-  const handleConfirmBooking = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTime) {
-      alert('Please select an available timing slot to continue.');
-      return;
-    }
-    const dayName = datesList[selectedDateIndex].dayName;
-    if (isTimeClubBlocked(dayName, selectedTime)) {
-      alert(`Machan! This slot (${selectedTime}) is reserved exclusively for Jack FC Club Practice/Academy on Mon-Fri 4:30 PM - 6:00 PM and Sat-Sun 7:30 AM - 9:00 AM. Please choose another available timing! ⚽`);
-      return;
-    }
-    if (!userName || !userPhone || !userEmail) {
-      alert('Please fill out Name, Phone, and Email to file reservation.');
-      return;
-    }
-
-    setIsReserving(true);
-
+  // Helper function to create booking ticket object
+  const createBookingTicket = () => {
     const formattedDate = `${datesList[selectedDateIndex].dayName}, ${datesList[selectedDateIndex].dayNum} ${datesList[selectedDateIndex].month} 2026`;
     const normalizedTime = selectedTime.replace(/[:\s]/g, '');
     const slotDocId = `SLOT-${chosenSportId}-${datesList[selectedDateIndex].fullString}-${normalizedTime}`.toLowerCase();
-    
-    // Aesthetic human readable booking ID to showcase on invoice
     const displayBookingId = `JK-${datesList[selectedDateIndex].dayNum}${normalizedTime}-${Math.floor(Math.random() * 90 + 10)}`;
-
     const ticketTimeRange = selectedTime && getEndTimeString(selectedTime, selectedDuration)
       ? `${selectedTime} - ${getEndTimeString(selectedTime, selectedDuration)}`
       : selectedTime;
 
-    const ticket = {
+    return {
       bookingId: displayBookingId,
       slotId: slotDocId,
       userName,
@@ -481,20 +469,93 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
       gst: cgstAndSgst,
       total: finalTotalAmount,
       createdAt: new Date().toISOString(),
-      pitchType: (chosenSportId === 'football-turf' || chosenSportId === 'box-cricket') ? (pitchType === 'full' ? 'Full Pitch' : 'Half Pitch') : undefined
+      pitchType: (chosenSportId === 'football-turf' || chosenSportId === 'box-cricket') ? (pitchType === 'full' ? 'Full Pitch' : 'Half Pitch') : undefined,
+      paymentMethod: paymentMethod,
+      paymentStatus: paymentMethod === 'venue' ? 'pending' : 'paid'
     };
+  };
 
+  // Function to save booking to Firestore
+  const saveBookingToFirestore = async (ticket: any) => {
+    await runTransaction(db, async (transaction) => {
+      const docRef = doc(db, 'bookings', ticket.slotId);
+      const docSnapshot = await transaction.get(docRef);
+      
+      if (docSnapshot.exists()) {
+        throw new Error('SLOT_ALREADY_BOOKED');
+      }
+      
+      transaction.set(docRef, ticket);
+    });
+  };
+
+  // Handle successful Stripe payment
+  const handleStripePaymentSuccess = async () => {
+    if (!pendingBookingDetails) return;
+    
     try {
-      await runTransaction(db, async (transaction) => {
-        const docRef = doc(db, 'bookings', slotDocId);
-        const docSnapshot = await transaction.get(docRef);
-        
-        if (docSnapshot.exists()) {
-          throw new Error('SLOT_ALREADY_BOOKED');
-        }
-        
-        transaction.set(docRef, ticket);
-      });
+      const ticket = { ...pendingBookingDetails, paymentStatus: 'paid' };
+      await saveBookingToFirestore(ticket);
+      
+      setShowStripeCheckout(false);
+      setPendingBookingDetails(null);
+      setGeneratedTicket(ticket);
+      setIsReserving(false);
+      onBookingConfirmed(ticket);
+      
+      try {
+        generateBookingPDF(ticket);
+      } catch (pdfErr) {
+        console.error('PDF Generation Error: ', pdfErr);
+      }
+    } catch (error: any) {
+      setShowStripeCheckout(false);
+      setIsReserving(false);
+      if (error && error.message === 'SLOT_ALREADY_BOOKED') {
+        alert('Sorry! This slot was just booked by someone else. Please select another timing.');
+      } else {
+        handleFirestoreError(error, OperationType.WRITE, `bookings/${pendingBookingDetails.slotId}`);
+      }
+    }
+  };
+
+  // Handle Stripe payment cancellation
+  const handleStripePaymentCancel = () => {
+    setShowStripeCheckout(false);
+    setPendingBookingDetails(null);
+    setIsReserving(false);
+  };
+
+  // Form Booking Submission Action
+  const handleConfirmBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTime) {
+      alert('Please select an available timing slot to continue.');
+      return;
+    }
+    const dayName = datesList[selectedDateIndex].dayName;
+    if (isTimeClubBlocked(dayName, selectedTime)) {
+      alert(`Machan! This slot (${selectedTime}) is reserved exclusively for Jack FC Club Practice/Academy on Mon-Fri 4:30 PM - 6:00 PM and Sat-Sun 7:30 AM - 9:00 AM. Please choose another available timing!`);
+      return;
+    }
+    if (!userName || !userPhone || !userEmail) {
+      alert('Please fill out Name, Phone, and Email to file reservation.');
+      return;
+    }
+
+    setIsReserving(true);
+    const ticket = createBookingTicket();
+
+    // If paying online, show Stripe checkout
+    if (paymentMethod === 'online') {
+      setPendingBookingDetails(ticket);
+      setShowStripeCheckout(true);
+      return;
+    }
+
+    // If paying at venue, save booking directly
+    try {
+      await saveBookingToFirestore(ticket);
 
       setGeneratedTicket(ticket);
       setIsReserving(false);
@@ -510,9 +571,9 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
     } catch (error: any) {
       setIsReserving(false);
       if (error && error.message === 'SLOT_ALREADY_BOOKED') {
-        alert('Sorry/Maafi! This play slot has already been reserved by another athlete. Please select another available timing! 🙏');
+        alert('Sorry/Maafi! This play slot has already been reserved by another athlete. Please select another available timing!');
       } else {
-        handleFirestoreError(error, OperationType.WRITE, `bookings/${slotDocId}`);
+        handleFirestoreError(error, OperationType.WRITE, `bookings/${ticket.slotId}`);
       }
     }
   };
@@ -1239,6 +1300,109 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
                   </div>
                 </div>
 
+                {/* Step 6: Payment Method Selection */}
+                <div className="bg-zinc-900 border border-zinc-805/90 rounded-2xl p-6 space-y-4 shadow-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-full bg-orange-500 text-white font-mono text-xs font-bold flex items-center justify-center">
+                      6
+                    </div>
+                    <h3 className="font-display font-extrabold text-base uppercase tracking-wider text-zinc-100">
+                      Choose Payment Method
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Pay Online Option */}
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('online')}
+                      className={`p-4 rounded-xl text-left transition-all border flex justify-between items-start cursor-pointer ${
+                        paymentMethod === 'online'
+                          ? 'border-orange-500 bg-orange-500/10'
+                          : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CreditCard className={`w-4 h-4 ${paymentMethod === 'online' ? 'text-orange-500' : 'text-zinc-400'}`} />
+                          <span className="text-sm font-bold text-white">Pay Online</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 block">
+                          Secure payment via Stripe. Card, UPI, and more accepted.
+                        </span>
+                        <span className="text-[9px] text-green-500 font-bold mt-1 block">
+                          Instant Confirmation
+                        </span>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-1 ${
+                        paymentMethod === 'online' ? 'border-orange-500 bg-orange-500' : 'border-zinc-600'
+                      }`}>
+                        {paymentMethod === 'online' && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                    </button>
+
+                    {/* Pay at Venue Option */}
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('venue')}
+                      className={`p-4 rounded-xl text-left transition-all border flex justify-between items-start cursor-pointer ${
+                        paymentMethod === 'venue'
+                          ? 'border-orange-500 bg-orange-500/10'
+                          : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Banknote className={`w-4 h-4 ${paymentMethod === 'venue' ? 'text-orange-500' : 'text-zinc-400'}`} />
+                          <span className="text-sm font-bold text-white">Pay at Venue</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 block">
+                          Pay in cash or card when you arrive at Jack FC.
+                        </span>
+                        <span className="text-[9px] text-yellow-500 font-bold mt-1 block">
+                          Payment Due on Arrival
+                        </span>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-1 ${
+                        paymentMethod === 'venue' ? 'border-orange-500 bg-orange-500' : 'border-zinc-600'
+                      }`}>
+                        {paymentMethod === 'venue' && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Payment method info */}
+                  <div className={`p-3 rounded-lg border ${
+                    paymentMethod === 'online' 
+                      ? 'bg-green-500/5 border-green-500/20' 
+                      : 'bg-yellow-500/5 border-yellow-500/20'
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      {paymentMethod === 'online' ? (
+                        <>
+                          <Lock className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-[11px] text-green-400 font-bold block">Secure Online Payment</span>
+                            <span className="text-[10px] text-zinc-500 block">
+                              Your slot will be instantly confirmed after successful payment. 256-bit SSL encryption.
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Wallet className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-[11px] text-yellow-400 font-bold block">Pay When You Arrive</span>
+                            <span className="text-[10px] text-zinc-500 block">
+                              Your slot will be reserved. Please arrive 10 minutes early to complete payment at the reception.
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
               {/* Invoice Summary right column block styled on screenshots receipt grids */}
@@ -1314,6 +1478,25 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
                       </div>
                     )}
 
+                    {/* Payment Method Display */}
+                    <div className="flex justify-between items-center pt-2 border-t border-zinc-800/40">
+                      <span className="text-zinc-500 font-medium">Payment:</span>
+                      <span className={`text-xs font-bold flex items-center gap-1.5 ${
+                        paymentMethod === 'online' ? 'text-green-400' : 'text-yellow-400'
+                      }`}>
+                        {paymentMethod === 'online' ? (
+                          <>
+                            <CreditCard className="w-3.5 h-3.5" />
+                            Pay Online
+                          </>
+                        ) : (
+                          <>
+                            <Banknote className="w-3.5 h-3.5" />
+                            Pay at Venue
+                          </>
+                        )}
+                      </span>
+                    </div>
 
                     <div className="flex justify-between items-center pt-3.5 border-t border-zinc-800">
                       <span className="text-white font-bold text-sm tracking-wide uppercase">Total Payable</span>
@@ -1328,15 +1511,31 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
                 <button
                   type="submit"
                   disabled={isReserving}
-                  className="w-full bg-orange-500 hover:bg-orange-600 active:scale-95 text-white py-4 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-widest shadow-lg shadow-orange-500/20 active-glow transition-all duration-300 disabled:opacity-50 disabled:cursor-wait cursor-pointer"
+                  className={`w-full py-4 rounded-xl text-xs sm:text-sm font-bold uppercase tracking-widest shadow-lg active-glow transition-all duration-300 disabled:opacity-50 disabled:cursor-wait cursor-pointer active:scale-95 ${
+                    paymentMethod === 'online'
+                      ? 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-orange-500/20'
+                      : 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/20'
+                  }`}
                 >
                   {isReserving ? (
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                      Filing Reservation...
+                      {paymentMethod === 'online' ? 'Preparing Payment...' : 'Filing Reservation...'}
                     </div>
                   ) : (
-                    'Confirm & Reserve Slot'
+                    <div className="flex items-center justify-center gap-2">
+                      {paymentMethod === 'online' ? (
+                        <>
+                          <CreditCard className="w-4 h-4" />
+                          Proceed to Payment
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Confirm & Reserve Slot
+                        </>
+                      )}
+                    </div>
                   )}
                 </button>
 
@@ -1509,6 +1708,15 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
 
           </div>
         </div>
+      )}
+
+      {/* Stripe Checkout Modal */}
+      {showStripeCheckout && pendingBookingDetails && (
+        <StripeCheckout
+          bookingDetails={pendingBookingDetails}
+          onSuccess={handleStripePaymentSuccess}
+          onCancel={handleStripePaymentCancel}
+        />
       )}
 
     </section>
