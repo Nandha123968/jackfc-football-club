@@ -1,7 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import Stripe from 'stripe';
+import Razorpay from 'razorpay';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID!,
+  key_secret: process.env.RAZORPAY_KEY_SECRET!,
+});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -14,31 +17,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       amount,
       customerEmail,
       customerName,
+      customerPhone,
     } = req.body;
 
     if (!bookingDetails || !amount || !customerEmail) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Create Checkout Session with embedded mode
-    const session = await stripe.checkout.sessions.create({
-      ui_mode: 'embedded',
-      mode: 'payment',
-      customer_email: customerEmail,
-      line_items: [
-        {
-          price_data: {
-            currency: 'inr',
-            product_data: {
-              name: `${bookingDetails.sportName} Booking`,
-              description: `${bookingDetails.date} | ${bookingDetails.time} | ${bookingDetails.pitchType || 'Standard'}`,
-            },
-            unit_amount: amount * 100, // Convert to paise (smallest currency unit)
-          },
-          quantity: 1,
-        },
-      ],
-      metadata: {
+    // Create Razorpay Order
+    const order = await razorpay.orders.create({
+      amount: amount * 100, // Convert to paise (smallest currency unit)
+      currency: 'INR',
+      receipt: bookingDetails.bookingId,
+      notes: {
         bookingId: bookingDetails.bookingId,
         slotId: bookingDetails.slotId,
         sportName: bookingDetails.sportName,
@@ -46,15 +37,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         time: bookingDetails.time,
         customerName: customerName,
         customerEmail: customerEmail,
-        customerPhone: bookingDetails.userPhone || '',
+        customerPhone: customerPhone || '',
         teamName: bookingDetails.teamName || '',
       },
-      redirect_on_completion: 'never',
     });
 
-    return res.status(200).json({ clientSecret: session.client_secret });
+    return res.status(200).json({
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: process.env.RAZORPAY_KEY_ID,
+    });
   } catch (error: any) {
-    console.error('Stripe session creation error:', error);
-    return res.status(500).json({ error: error.message || 'Failed to create checkout session' });
+    console.error('Razorpay order creation error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to create order' });
   }
 }

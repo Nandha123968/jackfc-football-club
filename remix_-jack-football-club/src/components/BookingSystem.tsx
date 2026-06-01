@@ -30,7 +30,7 @@ import {
   Banknote,
   Wallet
 } from 'lucide-react';
-import StripeCheckout from './StripeCheckout';
+import RazorpayCheckout from './RazorpayCheckout';
 
 interface BookingSystemProps {
   selectedFacilityId: string;
@@ -1710,9 +1710,9 @@ export default function BookingSystem({ selectedFacilityId, onBookingConfirmed }
         </div>
       )}
 
-      {/* Stripe Checkout Modal */}
+      {/* Razorpay Checkout Modal */}
       {showStripeCheckout && pendingBookingDetails && (
-        <StripeCheckout
+        <RazorpayCheckout
           bookingDetails={pendingBookingDetails}
           onSuccess={handleStripePaymentSuccess}
           onCancel={handleStripePaymentCancel}
