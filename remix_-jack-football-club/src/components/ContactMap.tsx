@@ -201,7 +201,7 @@ export default function ContactMap() {
           {/* Using exact coordinates: 13.0221256, 77.6628092 from Google Maps */}
           <iframe
             title="Jack Football Club Google Map - Exact Location"
-            className="w-full h-full border-none grayscale invert contrast-125 filter opacity-90"
+            className="w-full h-full border-none"
             src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3886.8897!2d77.6628092!3d13.0221256!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bae117aad6c9939%3A0xc785d6c34a76e9c5!2sJACK%20FOOTBALL%20TURF!5e0!3m2!1sen!2sin!4v1717200000000!5m2!1sen!2sin"
             allowFullScreen
             loading="lazy"
